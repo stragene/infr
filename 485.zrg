@@ -72,7 +72,13 @@ Define Var
 	tCurrent_Devalue_Ratio :N, 2
 
 	tEnergy_Modify_Able	  :N, 2   &&电能修改是否使能，FF使能，00禁用
-	tEnergy_Modify_Ratio   :N, 2   &&电能修改比例
+	tEnergy_Modify_Ratio   :N, 3   &&电能修改比例  1%~225% 2018-11-14 14:36:13
+    tEnergy_Real_Value              :N, 8
+    tEnergy_Real_Value_High         :N, 4
+    tEnergy_Real_Value_Low          :N, 4
+    tEnergy_Modified_Value          :N, 8
+    tEnergy_Modified_Value_High     :N, 4
+    tEnergy_Modified_Value_Low      :N, 4
 Enddef
 
 Procedure Drow_Box
@@ -343,6 +349,8 @@ Endpro
 
 Procedure Voltage_Set
 	Clear 2,5
+    Clear 0,1
+    @0,6 Say "电压参数"
 	Do While .T.
 		&&Set Mode To 0
 		&&@2,0 Say Space(20*12)
@@ -373,6 +381,7 @@ Procedure Voltage_Set
 			Do 电压参数复位
 		OtherWise
 			Clear 2,5
+            Clear 0,1
 			Exit
 		EndCase
 	Enddo
@@ -508,7 +517,7 @@ Procedure 合格范围下限
 Endpro
 
 
-Procedure 修改范围上限
+Procedure 修改范围上限_中继器暂不支持
 	CLEAR 2,5
 	Initsio 1200,"E",8	&&初始化串口
 	Do Case
@@ -559,7 +568,7 @@ Procedure 修改范围上限
 Endpro
 
 
-Procedure 修改范围下限
+Procedure 修改范围下限_中继器暂不支持
 	CLEAR 2,5
 	Initsio 1200,"E",8	&&初始化串口
 	Do Case
@@ -583,7 +592,6 @@ Procedure 修改范围下限
 		SBuffer{9,2}  = "\x14\x06"
 		SBuffer{11,4} = "\x33\x3E\x34\x35"
 		SBuffer{15,2} = NumToBcd(V_Min_Min, 33h)
-		&&Do SendCom
 		Do ReadCom
 		If nComResult = 999
 			Loop				
@@ -604,6 +612,24 @@ Procedure 修改范围下限
 			EndIf
 		EndIf
 	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+
+Procedure 修改范围上限
+	CLEAR 2,5
+	@3,2 Say "该版本不支持"
+    WAIT ""
+	CLEAR 3,2
+    return
+Endpro
+
+
+Procedure 修改范围下限
+	CLEAR 2,5
+	@3,2 Say "该版本不支持"
+    WAIT ""
 	CLEAR 3,2
 	Return
 Endpro
@@ -800,9 +826,18 @@ Procedure 电压参数复位
 Return
 Endpro
 
-
 Procedure Current_Set
 	CLEAR 2,5
+	@3,2 Say "该版本不支持"
+    WAIT ""
+	CLEAR 3,2
+    return
+Endpro
+
+
+Procedure Current_Set_中继器暂不支持
+	CLEAR 2,5
+    @0,6 Say "电流参数"
 	Do While .T.
 		@3,5 Prompt " 是否启用 "
 		@4,5 Prompt " 设置上限 "
@@ -1004,11 +1039,14 @@ Endpro
 
 Procedure Energy_Set
 	CLEAR 2,5
+    CLEAR 0,1
+    @0, 6 Say "电量参数"
 	Do While .T.
 		@2,5 Prompt " 是否启用 "
 		@3,5 Prompt " 设置比例 "
 		@4,5 Prompt " 参数查询 "
-		@5,5 Prompt " 参数复位 "
+		@5,2 Prompt " 有功日冻结查询 "
+		@6,5 Prompt " 参数复位 "
 		MenuChoice = 1
 		Menu To MenuChoice
 
@@ -1020,14 +1058,71 @@ Procedure Energy_Set
 		Case MenuChoice = 3
 			Do 查询电能修改参数
 		Case MenuChoice = 4
+			Do 查询日冻结正向有功值
+		Case MenuChoice = 5
 			Do 电能修改参数复位
 		OtherWise
 			Exit
 		EndCase
 	Enddo
 	CLEAR 2,5 
+    CLEAR 0,1
 	Return
 Endpro
+
+Procedure 查询日冻结正向有功值
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	@3,2 Say "请按确认键查询"
+	&&Read
+	WAIT ""
+	If Lastkey() <> 13
+		CLEAR 2,2
+		Return
+	EndIf
+	Do While .T.
+		&&SBuffer{9,2}  = "\x14\x04"
+		SBuffer{9,2}  = "\x91\x04"
+		SBuffer{11,4} = "\x33\x77\x34\x33"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			tEnergy_Real_Value = BCDTONUM(cData{1, 4}, 33H)
+            tEnergy_Real_Value_High = tEnergy_Real_Value / 100
+            tEnergy_Real_Value_Low = tEnergy_Real_Value % 100
+
+			tEnergy_Modified_Value = BCDTONUM(cData{5, 4}, 33H)
+            tEnergy_Modified_Value_High = tEnergy_Modified_Value / 100
+            tEnergy_Modified_Value_Low = tEnergy_Modified_Value % 100
+
+			@4,0 Say "真实值:"+ STR(tEnergy_Real_Value_High, 4)+ "." + STR(tEnergy_Real_Value_Low , 4) + "kwh"
+			@5,0 Say "修改值:"+ STR(tEnergy_Modified_Value_High, 4) + "." + STR(tEnergy_Modified_Value_Low, 4) +"kwh"
+			WAIT ""
+			&&If TESTKB() &&按任意键返回
+				CLEAR 3, 4
+				EXIT
+			&&Endif
+		EndIf
+	Enddo
+	CLEAR 3,4
+	Return
+Endpro
+
 
 Procedure 查询电能修改参数
 	CLEAR 2,5
@@ -1048,7 +1143,8 @@ Procedure 查询电能修改参数
 		Return
 	EndIf
 	Do While .T.
-		SBuffer{9,2}  = "\x14\x04"
+		&&SBuffer{9,2}  = "\x14\x04"
+		SBuffer{9,2}  = "\x91\x04"
 		SBuffer{11,4} = "\x33\x76\x34\x33"
 		&&Do SendCom
 		Do ReadCom
@@ -1060,16 +1156,16 @@ Procedure 查询电能修改参数
 			Return
 		EndIf
 		If nComResult = 0
-			tEnergy_Modify_Able = cData{1, 1}
-			If tEnergy_Modify_Able = 0FFH
-				@3,2 Say "是否启用:已启用"
-			Else
-				If	tEnergy_Modify_Able= 00H
-					@3,2 Say "是否启用:未启用"
-				Endif
-			Endif
-			tEnergy_Modify_Ratio= BCDTONUM(cData{2, 1}, 00H)
-			@4,2 Say "修改比例:"+ STR(tEnergy_Modify_Ratio, 2)+"%"
+			&&tEnergy_Modify_Able = cData{1, 1}
+			&&If tEnergy_Modify_Able = 0FFH
+				&&@3,2 Say "是否启用:已启用"
+			&&Else
+				&&If	tEnergy_Modify_Able= 00H
+					&&@3,2 Say "是否启用:未启用"
+				&&Endif
+			&&Endif
+			tEnergy_Modify_Ratio= BCDTONUM(cData{1, 2}, 00H)
+			@4,2 Say "修改比例:"+ STR(tEnergy_Modify_Ratio, 3)+"%"
 			WAIT ""
 			&&If TESTKB() &&按任意键返回
 				CLEAR 3, 4
@@ -1097,16 +1193,17 @@ Procedure 设置电能修改比例
 
 	@3,2 Say "请输入修改比例(%):"
 	@4,8 Get tEnergy_Modify_Ratio
-	Line 63,81,78,81
+	Line 63,81,86,81
 	Read
 	If Lastkey() <> 13
 		CLEAR 3,2
 		Return
 	EndIf
 	Do While .T.
-		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{9,2}  = "\x14\x06"
 		SBuffer{11,4} = "\x33\x74\x34\x33"
-		SBuffer{15,2} = NumToBcd(tEnergy_Modify_Ratio, 00h)
+		SBuffer{15,1} = NumToBcd(tEnergy_Modify_Ratio % 100, 00h)
+		SBuffer{16,1} = NumToBcd(tEnergy_Modify_Ratio / 100, 00h)
 		&&Do SendCom
 		Do ReadCom
 		If nComResult = 999
@@ -1314,9 +1411,9 @@ Start
 		Set Mode To 1
 		@0,4 Say " 485掌机程序 "
 		@1,1 Say "=================="
-		@2,5 Prompt " 电压设置 "
-		@3,5 Prompt " 电流设置 "
-		@4,5 Prompt " 电量设置 "
+		@2,5 Prompt " 电压参数 "
+		@3,5 Prompt " 电流参数 "
+		@4,5 Prompt " 电量参数 "
 		@5,5 Prompt " 设    置 "
 		@6,5 Prompt " 关    于 "
 		&&@7,5 Prompt " 读取地址 "
@@ -1334,6 +1431,7 @@ Start
 		Case MenuChoice = 4
 			Do Options
 		Case MenuChoice = 5
+            CLEAR
 			i = MessageBox("    485掌机程序         VERSION 1.0    ",0,"关  于")
 		Case MenuChoice = 6
 			Do ReadAddress
