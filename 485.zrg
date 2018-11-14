@@ -1,0 +1,1344 @@
+*****645规约演示程序*******
+&&*** v1.41 2004.01.04 修改设置地址(Set_Adv_Addr)自动补AAh
+&&*** v1.40 2003.12.13 Current_Set模块增加了抄日期、时间、表号、用户号、设备码的功能
+&&***                  ReadCom模块增加了对控制码除 81H、C4H 外误码的判断
+&&*** v1.32 2003.12.10 修改了电压电流的数据长度，修正了读电流时没有转换成小数的问题
+&&***                  修正了Current_Set模块中，有关总无功数据标识填写的错误(类似\xC4\x54-->\xC4\x45)
+&&*** v1.31 2003.11.19 增加了RS-232端口，修正了广播地址在转换中的顺序错误
+&&*** v1.20 增加了抄表后显示上月和上上月结果的功能
+&&*** v1.10 增加了抄表后显示结果的功能
+
+Define DataBase A
+
+	A相电压         	: N, 4, 0
+	B相电压         	: N, 4, 0
+	C相电压        	 	: N, 4, 0
+	A相电流         	: N, 5, 2
+	B相电流         	: N, 5, 2
+	C相电流         	: N, 5, 2
+	电表日期        	: C, 10
+	电表时间        	: C, 8
+	电表号          	: C, 12
+	用户号          	: C, 12
+	设备码          	: C, 12
+Enddef
+
+Define Var
+	MenuChoice      :N, 1
+	Offsetx         :N, 3
+	Offsety         :N, 3
+	Icon_Mode       :N, 1
+	LeftTopx        :N, 3
+	LeftTopy        :N, 3
+	RightEndx       :N, 3
+	RightEndy       :N, 3
+	Box_Mode        :N, 1
+	nCom            :N, 1
+	i               :N, 4
+	j               :N, 4
+	k               :N, 4
+	l               :N, 4
+	m               :N, 4
+	Adv_Addr        :C, 6
+	cAdv_Addr       :C, 12
+	tcAdv_Addr      :C, 12
+	nTimes          :N, 1
+	RecvWait        :N, 2
+	tRecvWait       :N, 2
+	Waken           :C, 3
+	SBuffer         :C, 30
+	RBuffer         :C, 100
+	DataID          :C, 2
+	ID_Buffer       :C, 100
+	nComResult      :N, 3
+	cData           :C, 12		&&数据域，字符格式
+	nData           :N, 12		&&数据域，数值格式
+	nControl			 :N, 4
+	DataLen         :N, 4		&&数据长度
+	cTemp           :C, 12
+	MM              :C, 12[4]
+	&&nDisReport      :N, 1		&&是否通讯成功显示结果的标志
+
+	tVoltage_Max			:N, 5, 1
+	tVoltage_Min			:N, 5, 1
+	tVoltage_Max_Max		:N, 5, 1
+	tVoltage_Min_Min		:N, 5, 1
+	V_Change_Allowed		:C, 1
+	V_Max						:N, 4
+	V_Min						:N, 4
+	V_Max_Max				:N, 4		&&总宽度4，小数宽度0
+	V_Min_Min				:N, 4
+	&&C_Change_Allowed		:C, 1
+	tCurrent_Devalue_Ratio :N, 2
+
+	tEnergy_Modify_Able	  :N, 2   &&电能修改是否使能，FF使能，00禁用
+	tEnergy_Modify_Ratio   :N, 2   &&电能修改比例
+Enddef
+
+Procedure Drow_Box
+	Do Case
+	Case Box_Mode = 1
+		Line LeftTopx,LeftTopy,RightEndx,LeftTopy
+		Line RightEndx,LeftTopy,RightEndx,RightEndy
+		Line RightEndx,RightEndy,LeftTopx,RightEndy
+		Line LeftTopx,RightEndy,LeftTopx,LeftTopy
+	Case Box_Mode = 2
+		Line LeftTopx,LeftTopy+2,RightEndx,LeftTopy+2
+		Line RightEndx,LeftTopy+2,RightEndx,RightEndy-2
+		Line RightEndx,RightEndy-2,LeftTopx,RightEndy-2
+		Line LeftTopx,RightEndy-2,LeftTopx,LeftTopy+2
+
+		Line LeftTopx+2,LeftTopy,RightEndx-2,LeftTopy
+		Line RightEndx-2,LeftTopy,RightEndx-2,RightEndy
+		Line RightEndx-2,RightEndy,LeftTopx+2,RightEndy
+		Line LeftTopx+2,RightEndy,LeftTopx+2,LeftTopy
+	EndCase
+	Return
+Endpro
+
+Procedure Options
+	CLEAR 2,6
+	Do While .T.
+		@3,5 Prompt " 设广播地址 "
+		@4,5 Prompt " 设接收延时 "
+		@5,5 Prompt " 设置通讯口 "
+		MenuChoice = 1
+		Menu To MenuChoice
+
+		&&MM[1] = " 设广播地址 "
+		&&MM[2] = " 设接收延时 "
+		&&MM[3] = " 设置通讯口 "
+		&&MenuChoice = 1
+		&&@3,4 Menu MM,4,3
+		&&Read Menu To MenuChoice
+
+		Do Case
+		Case MenuChoice = 1
+			Do Set_Adv_Addr
+		Case MenuChoice = 2
+			Do Set_Recv_Wait
+		Case MenuChoice = 3
+			Do Set_ComPort
+		OtherWise
+			Exit
+		EndCase
+	Enddo
+	CLEAR 2,6
+	Return
+Endpro
+
+
+Procedure Set_Recv_Wait
+	CLEAR 2, 6 
+	tRecvWait = RecvWait
+	@3,2 Say "输入接收延时:"
+	@4,6 Get tRecvWait
+	@row(),col()+2 Say "百毫秒"
+	Line 47,81,63,81
+	Read
+
+	If Lastkey() <> 13
+		CLEAR 2, 6
+		Return
+	EndIf
+	RecvWait = tRecvWait
+	CLEAR 2, 6
+	Return
+Endpro
+
+
+Procedure Set_Adv_Addr
+	CLEAR 2,6
+	tcAdv_Addr = cAdv_Addr
+	@3,2 Say "输入广播地址:"
+	@4,4 Get tcAdv_Addr
+	Line 31,81,127,81
+	Read
+
+	If Lastkey() <> 13
+		CLEAR 2,6
+		Return
+	EndIf
+
+	If Len(Trim(tcAdv_Addr)) < 12
+		If Int(Len(Trim(tcAdv_Addr))/2.0) = Len(Trim(tcAdv_Addr))/2.0
+			tcAdv_Addr = Right("AAAAAAAAAAAA" + tcAdv_Addr,12)
+		Else
+			tcAdv_Addr = Right("AAAAAAAAAAA0" + tcAdv_Addr,12)
+		EndIf
+	EndIf
+
+	i = 1
+	Do While i <= 12
+		If .Not.((SubStr(tcAdv_Addr,i,1) >= "0" .And. SubStr(tcAdv_Addr,i,1) <= "9") .Or. (SubStr(tcAdv_Addr,i,1) >= "A" .And. SubStr(tcAdv_Addr,i,1) <= "F"))
+			j = Messagebox("地址格式非法！",0,"警  告")
+			CLEAR 2,6
+			Return
+		EndIf
+		i = i + 1
+	Enddo
+	cAdv_Addr = tcAdv_Addr
+	Do _StrHex
+	CLEAR 2, 6
+	Return
+Endpro
+
+
+Procedure Set_ComPort
+	CLEAR 2, 6
+	@3,4 Prompt " 电缆RS-232 "
+	@4,4 Prompt " 红外通讯口 "
+	@5,4 Prompt " 电缆RS-485 "
+	MenuChoice = nCom
+	Menu To MenuChoice
+
+	If MenuChoice > 0 .And. MenuChoice <= 3
+		nCom = MenuChoice
+	EndIf
+	CLEAR 2, 6
+	Return
+Endpro
+
+
+
+Procedure _StrHex
+	Adv_Addr = ""
+	i = 1
+	Do While i <= 12
+		Do Case
+		Case Left(SubStr(cAdv_Addr,i,2),1) <= "9"
+			j = (Asc(Left(SubStr(cAdv_Addr,i,2),1)) - 030h) * 16
+		Case Left(SubStr(cAdv_Addr,i,2),1) >= "A"
+			j = (Asc(Left(SubStr(cAdv_Addr,i,2),1)) - 037h) * 16
+		EndCase
+
+		Do Case
+		Case Right(SubStr(cAdv_Addr,i,2),1) <= "9"
+			k = Asc(Right(SubStr(cAdv_Addr,i,2),1)) - 030h
+		Case Right(SubStr(cAdv_Addr,i,2),1) >= "A"
+			k = Asc(Right(SubStr(cAdv_Addr,i,2),1)) - 037h
+		EndCase
+		Adv_Addr = Chr(j+k) + Adv_Addr
+		i = i + 2
+	Enddo
+	Return
+Endpro
+
+
+
+Procedure SendCom
+	CLEAR 2,6
+	@3,2 Say "正在发送..." 
+	Sends Waken{1,3}
+	SBuffer{1,1}  = 068h
+	SBuffer{2,6}  = Adv_Addr{1,6}	&&实际上是用广播地址去填充它
+	SBuffer{8,1}  = 068h
+	l = SBuffer{10, 1}
+	SBuffer{11 + l,1} = CheckSum(SBuffer{1, 10 + l})
+	SBuffer{12 + l,1} = 016h
+	Sends SBuffer{1,12 + l}
+	CLEAR 2,6
+	Return
+Endpro
+
+&&接收函数
+Procedure ReadCom
+	CLEAR 2,6
+	nTimes = 0
+	nComResult = 0
+	Do While .T.
+				@3,2 Say "正在发送..." 
+				Sends Waken{1,3}
+				SBuffer{1,1}  = 068h
+				SBuffer{2,6}  = Adv_Addr{1,6}	&&实际上是用广播地址去填充它
+				SBuffer{8,1}  = 068h
+				l = SBuffer{10, 1}
+				SBuffer{11 + l,1} = CheckSum(SBuffer{1, 10 + l})
+				SBuffer{12 + l,1} = 016h
+				Sends SBuffer{1,12 + l}
+
+		CLEAR 3,1
+		@4,2 Say "正在接收..." 
+		j = Receives(Rbuffer{1,1},RecvWait)
+		If j = 0
+			nTimes = nTimes + 1
+			If nTimes >= 3 
+				nComResult = 10
+				k = MessageBox("中继器无应答！"+Chr(13)+"是否重试？",261,"信  息") &&258：100h + 2
+				If k = 2
+					nComResult = 930
+				EndIf
+				If k = 4
+					nComResult = 999
+				EndIf
+				CLEAR 2,6
+				Return
+			Endif
+			@6,5 Say "重试 "+Str(nTimes,1)+" 次"
+		Else
+			l=0
+			l = Rbuffer{1,1}
+			If l = 068h
+				Exit		&&转向到Enddo后的第一条语句，表明收到了有效数据
+			Endif			&&如果没有则继续判断是否收到有效字符
+		Endif
+	Enddo
+
+	j = Receives(RBuffer{2,9}, 5)
+	If j < 9
+		nComResult = 11
+		k = MessageBox("数据帧长度不足!"+Chr(13)+"是否重试？",261,"错  误")
+		If k = 2				&&放弃
+			nComResult = 930
+		EndIf
+		If k = 4
+			nComResult = 999	&&重试
+		EndIf
+		CLEAR 2,6
+		Return
+	EndIf
+
+	l = RBuffer{10,1}
+	If l <> 0
+		DataLen = l - 4
+	Else
+		DataLen= 0
+	EndIf
+		j = Receives(RBuffer{11,l + 2}, 5)&&读取到16
+		If j <> l + 2
+			nComResult = 12
+			k = MessageBox("读不到后续数据!"+Chr(13)+"是否重试？",261,"错  误")
+			If k = 2
+				nComResult = 930
+			EndIf
+			If k = 4
+				nComResult = 999
+			EndIf
+			CLEAR 2,6
+			Return
+		EndIf
+	j = RBuffer{11 + l,1}		&&CS
+	If j <> Asc(Chr(CheckSum(RBuffer{1, 10 + l})))
+		nComResult = 13
+		k = MessageBox("数据校验错误!"+Chr(13)+"是否重试？",261,"错  误")
+		If k = 2
+			nComResult = 930
+		EndIf
+		If k = 4
+			nComResult = 999
+		EndIf
+		CLEAR 2,6
+		Return
+	EndIf
+	nComResult = 0
+	nControl = RBuffer{9,1}						&&控制码
+	If DataLen <> 0
+		cData{1,DataLen}	= RBuffer{15,DataLen}		&&召测数据，不含数据标识
+	EndIf
+	CLEAR 2,6
+	Return
+Endpro
+
+
+
+Procedure Voltage_Set
+	Clear 2,5
+	Do While .T.
+		&&Set Mode To 0
+		&&@2,0 Say Space(20*12)
+		&&@14,0 Say Space(20)
+		&&Set Mode To 1
+		&&LeftTopx = 7
+		&&LeftTopy = 23
+		&&RightEndx = 152
+		&&RightEndy = 120
+		&&Box_Mode = 2
+		&&Do Drow_Box
+
+		@2,5 Prompt " 是否启用 "
+		@3,5 Prompt " 参数设置 "
+		@4,5 Prompt " 参数查询 "
+		@5,5 Prompt " 参数复位 "
+		@6,5 Prompt " 返    回 "
+		MenuChoice = 1
+		Menu To MenuChoice
+		Do Case
+		Case MenuChoice = 1
+			Do 电压是否启用
+		Case MenuChoice = 2
+			Do 电压参数设置
+		Case MenuChoice = 3
+			Do 电压参数查询
+		Case MenuChoice = 4
+			Do 电压参数复位
+		OtherWise
+			Clear 2,5
+			Exit
+		EndCase
+	Enddo
+	Return
+Endpro
+
+
+Procedure 电压参数设置
+	Clear 2,5
+	Do While .T.
+		@2,4 Prompt " 合格范围上限 "
+		@3,4 Prompt " 合格范围下限 "
+		@4,4 Prompt " 修改范围上限 "
+		@5,4 Prompt " 修改范围下限 "
+		MenuChoice = 1
+		Menu To MenuChoice
+
+		Do Case
+		Case MenuChoice = 1
+			Do 合格范围上限
+		Case MenuChoice = 2
+			Do 合格范围下限
+		Case MenuChoice = 3
+			Do 修改范围上限
+		Case MenuChoice = 4
+			Do 修改范围下限
+		OtherWise
+			CLEAR 2,5
+			Exit
+		EndCase
+	Enddo
+	Return
+Endpro
+
+
+Procedure 合格范围上限
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	@3,2 Say "请输入上限值(V):"
+	@4,8 Get tVoltage_Max
+	Line 63,81,102,81
+	Read
+	If Lastkey() <> 13
+	CLEAR 3,2
+		Return
+	EndIf
+	V_Max= tVoltage_Max * 10
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x06"
+		SBuffer{11,4} = "\x33\x3B\x34\x35"
+		SBuffer{15,2} = NumToBcd(V_Max, 33h)
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("设置成功！",0,"信  息")
+			Else
+				i= MessageBox("设置失败！",0,"信  息")
+			EndIf
+			If i=1
+				CLEAR 3,2
+				Return
+			EndIf
+		EndIf
+	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+
+Procedure 合格范围下限
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	@3,2 Say "请输入下限值(V):"
+	@4,8 Get tVoltage_Min
+	Line 63,81,102,81
+	Read
+	If Lastkey() <> 13
+		CLEAR 3,2
+		Return
+	EndIf
+	V_Min=tVoltage_Min *10 
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x06"
+		SBuffer{11,4} = "\x33\x3C\x34\x35"
+		SBuffer{15,2} = NumToBcd(V_Min, 33h)
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("设置成功！",0,"信  息")
+			Else
+				i= MessageBox("设置失败！",0,"信  息")
+			EndIf
+			If i=1
+				CLEAR 3,2
+				Return
+			EndIf
+		EndIf
+	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+
+Procedure 修改范围上限
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+
+	@3,2 Say "请输入上上限值(V):"
+	@4,8 Get tVoltage_Max_Max
+	Line 63,81,102,81
+	Read
+	If Lastkey() <> 13
+		CLEAR 3,2
+		Return
+	EndIf
+	V_Max_Max= tVoltage_Max_Max * 10
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x06"
+		SBuffer{11,4} = "\x33\x3D\x34\x35"
+		SBuffer{15,2} = NumToBcd(V_Max_Max, 33h)
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("设置成功！",0,"信  息")
+			Else
+				i= MessageBox("设置失败！",0,"信  息")
+			EndIf
+			If i=1
+				CLEAR 3,2
+				Return
+			EndIf
+		EndIf
+	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+
+Procedure 修改范围下限
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	@3,2 Say "请输入下下限值(V):"
+	@4,8 Get tVoltage_Min_Min
+	Line 63,81,102,81
+	Read
+	If Lastkey() <> 13
+		CLEAR 3,2
+		Return
+	EndIf
+	V_Min_Min= tVoltage_Min_Min * 10
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x06"
+		SBuffer{11,4} = "\x33\x3E\x34\x35"
+		SBuffer{15,2} = NumToBcd(V_Min_Min, 33h)
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("设置成功！",0,"信  息")
+			Else
+				i= MessageBox("设置失败！",0,"信  息")
+			EndIf
+			If i=1
+				CLEAR 3,2
+				Return
+			EndIf
+		EndIf
+	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+
+Procedure 电压是否启用
+	CLEAR 2,5
+	Do While .T.
+		@3,7 Prompt " 启用 "
+		@4,7 Prompt " 禁用 "
+		MenuChoice = 1
+		Menu To MenuChoice
+		Do Case
+		Case MenuChoice = 1
+			Do 电压限值启用
+				If i=1
+				CLEAR 3,4
+				Return
+			EndIf
+		Case MenuChoice = 2
+			Do 电压限值禁用
+			If i=1
+				CLEAR 3,4
+				Return
+			EndIf
+		OtherWise
+			CLEAR 3,4
+			Exit
+		EndCase
+	Enddo
+	Return
+Endpro
+
+Procedure 电压限值启用
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{11,4}  = "\x33\x37\x34\x35"
+		SBuffer{15,1}  = "\x33"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("启用成功！",0,"信  息")
+			Else
+				i= MessageBox("启用失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+Procedure 电压限值禁用
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{11,4}  = "\x33\x37\x34\x35"
+		SBuffer{15,1}  = "\x34"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("禁用成功！",0,"信  息")
+			Else
+				i= MessageBox("禁用失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+Procedure 电压参数查询
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	@3,2 Say "请按确认键查询"
+	&&Read
+	WAIT ""
+	If Lastkey() <> 13
+		CLEAR 2,2
+		Return
+	EndIf
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x04"
+		SBuffer{11,4} = "\x33\x39\x34\x35"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			V_Max_Max			= BCDTONUM (cData{1, 2}, 33H)
+			tVoltage_Max_Max	= V_Max_Max/10.0
+			V_Min_Min			= BCDTONUM (cData{3, 2}, 33H)
+			tVoltage_Min_Min	= V_Min_Min/10.0
+			V_Max					= BCDTONUM (cData{5, 2}, 33H)
+			tVoltage_Max		= V_Max/10.0
+			V_Min					= BCDTONUM (cData{7, 2}, 33H)
+			tVoltage_Min		= V_Min/10.0
+			@3,2 Say "合格上限(V):"+ STR(tVoltage_Max, 5, 1)
+			@4,2 Say "合格下限(V):"+ STR(tVoltage_Min, 5, 1)
+			@5,2 Say "修改上限(V):"+ STR(tVoltage_Max_Max, 5, 1)
+			@6,2 Say "修改下限(V):"+ STR(tVoltage_Min_Min, 5, 1)+ CHR(13)
+			WAIT ""
+			&&If TESTKB() &&按任意键返回
+				CLEAR 3, 4
+				EXIT
+			&&Endif
+		EndIf
+	Enddo
+	CLEAR 3,4
+	Return
+Endpro
+
+
+Procedure 电压参数复位
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x04"
+		SBuffer{11,4}  = "\x33\x3A\x34\x35"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("复位成功！",0,"信  息")
+			Else
+				i= MessageBox("复位失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+
+Procedure Current_Set
+	CLEAR 2,5
+	Do While .T.
+		@3,5 Prompt " 是否启用 "
+		@4,5 Prompt " 设置上限 "
+		@5,5 Prompt " 参数复位 "
+		MenuChoice = 1
+		Menu To MenuChoice
+
+		Do Case
+		Case MenuChoice = 1
+			&& Do 电流差值是否启用
+		Case MenuChoice = 2
+			&& Do 电流差值上限设置
+		Case MenuChoice = 3
+			&& Do 电流差值参数复位
+		OtherWise
+			Exit
+		EndCase
+	Enddo
+	Return
+Endpro
+
+Procedure 电流差值上限设置
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+
+	@3,2 Say "请输入电流差值上限值(%):"
+	@4,8 Get tCurrent_Devalue_Ratio
+	Line 63,81,87,81
+	Read
+	If Lastkey() <> 13
+		CLEAR 3,2
+		Return
+	EndIf
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x06"
+		SBuffer{11,4} = "\xFF\xFF\xFF\xFF"  && 中继器不支持，
+		SBuffer{15,2} = NumToBcd(tCurrent_Devalue_Ratio, 00h)
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("设置成功！",0,"信  息")
+			Else
+				i= MessageBox("设置失败！",0,"信  息")
+			EndIf
+			If i=1
+				CLEAR 3,2
+				Return
+			EndIf
+		EndIf
+	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+Procedure 电流差值是否启用
+	CLEAR 2,5
+	Do While .T.
+		@4,7 Prompt " 启用 "
+		@5,7 Prompt " 禁用 "
+		MenuChoice = 1
+		Menu To MenuChoice
+		Do Case
+		Case MenuChoice = 1
+			Do 电流差值启用
+		Case MenuChoice = 2
+			Do 电流差值禁用
+		OtherWise
+			CLEAR 3,4
+			Exit
+		EndCase
+	Enddo
+	Return
+Endpro
+
+Procedure 电流差值启用
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		&&SBuffer{9,2}  = 
+		&&SBuffer{11,4}  = 
+		&&SBuffer{15,1}  = 
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("启用成功！",0,"信  息")
+			Else
+				i= MessageBox("启用失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+Procedure 电流差值禁用
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		&& SBuffer{9,2}  = 
+		&& SBuffer{11,4}  = 
+		&& SBuffer{15,1}  = 
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  && 94
+				i= MessageBox("禁用成功！",0,"信  息")
+			Else
+				i= MessageBox("禁用失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+Procedure 电流差值参数复位
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		&& SBuffer{9,2}  = 
+		&& SBuffer{11,4}  = 
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  
+				i= MessageBox("复位成功！",0,"信  息")
+			Else
+				i= MessageBox("复位失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+
+Procedure Energy_Set
+	CLEAR 2,5
+	Do While .T.
+		@2,5 Prompt " 是否启用 "
+		@3,5 Prompt " 设置比例 "
+		@4,5 Prompt " 参数查询 "
+		@5,5 Prompt " 参数复位 "
+		MenuChoice = 1
+		Menu To MenuChoice
+
+		Do Case
+		Case MenuChoice = 1
+			Do 电能修改是否启用
+		Case MenuChoice = 2
+			Do 设置电能修改比例
+		Case MenuChoice = 3
+			Do 查询电能修改参数
+		Case MenuChoice = 4
+			Do 电能修改参数复位
+		OtherWise
+			Exit
+		EndCase
+	Enddo
+	CLEAR 2,5 
+	Return
+Endpro
+
+Procedure 查询电能修改参数
+	CLEAR 2,5
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	@3,2 Say "请按确认键查询"
+	&&Read
+	WAIT ""
+	If Lastkey() <> 13
+		CLEAR 2,2
+		Return
+	EndIf
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x04"
+		SBuffer{11,4} = "\x33\x76\x34\x33"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			tEnergy_Modify_Able = cData{1, 1}
+			If tEnergy_Modify_Able = 0FFH
+				@3,2 Say "是否启用:已启用"
+			Else
+				If	tEnergy_Modify_Able= 00H
+					@3,2 Say "是否启用:未启用"
+				Endif
+			Endif
+			tEnergy_Modify_Ratio= BCDTONUM(cData{2, 1}, 00H)
+			@4,2 Say "修改比例:"+ STR(tEnergy_Modify_Ratio, 2)+"%"
+			WAIT ""
+			&&If TESTKB() &&按任意键返回
+				CLEAR 3, 4
+				EXIT
+			&&Endif
+		EndIf
+	Enddo
+	CLEAR 3,4
+	Return
+Endpro
+
+
+
+Procedure 设置电能修改比例
+	CLEAR 2,5
+	Initsio 1200,"E",8	
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+
+	@3,2 Say "请输入修改比例(%):"
+	@4,8 Get tEnergy_Modify_Ratio
+	Line 63,81,78,81
+	Read
+	If Lastkey() <> 13
+		CLEAR 3,2
+		Return
+	EndIf
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{11,4} = "\x33\x74\x34\x33"
+		SBuffer{15,2} = NumToBcd(tEnergy_Modify_Ratio, 00h)
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			CLEAR 3,2
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  
+				i= MessageBox("设置成功！",0,"信  息")
+			Else
+				i= MessageBox("设置失败！",0,"信  息")
+			EndIf
+			If i=1
+				CLEAR 3,2
+				Return
+			EndIf
+		EndIf
+	Enddo
+	CLEAR 3,2
+	Return
+Endpro
+
+Procedure 电能修改是否启用
+	CLEAR 2,5
+	Do While .T.
+		@4,7 Prompt " 启用 "
+		@5,7 Prompt " 禁用 "
+		MenuChoice = 1
+		Menu To MenuChoice
+		Do Case
+		Case MenuChoice = 1
+			Do 电能修改启用
+			If i=1
+				CLEAR 3,4
+				Return
+			EndIf
+		Case MenuChoice = 2
+			Do 电能修改禁用
+			If i=1
+				CLEAR 3,4
+				Return
+			EndIf
+		OtherWise
+			CLEAR 3,4
+			Exit
+		EndCase
+	Enddo
+	Return
+Endpro
+
+Procedure 电能修改启用
+	Initsio 1200,"E",8	
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{11,4}  = "\x33\x73\x34\x33"
+		SBuffer{15,1}  = "\xFF"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  
+				i= MessageBox("启用成功！",0,"信  息")
+			Else
+				i= MessageBox("启用失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+Procedure 电能修改禁用
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{11,4}  = "\x33\x73\x34\x33"
+		SBuffer{15,1}  = "\x00"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  
+				i= MessageBox("禁用成功！",0,"信  息")
+			Else
+				i= MessageBox("禁用失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+Procedure 电能修改参数复位
+	CLEAR 2,5
+	Initsio 1200,"E",8	
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x14\x05"
+		SBuffer{11,4}  = "\x33\x75\x34\x33"
+		SBuffer{15,1}  = "\x00"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			If nControl = 94H  
+				i= MessageBox("复位成功！",0,"信  息")
+			Else
+				i= MessageBox("复位失败！",0,"信  息")
+			EndIf
+			If i=1
+				Return
+			EndIf
+		EndIf
+	Enddo
+Return
+Endpro
+
+
+
+Procedure ReadAddress
+	Initsio 1200,"E",8	&&初始化串口
+	Do Case
+	Case nCom = 1
+		Set Com To 1
+	Case nCom = 2
+		Set Com To 2
+	Case nCom = 3
+		Set Com To 1 /485
+	EndCase
+	Do While .T.
+		SBuffer{9,2}  = "\x13\x00"
+		&&Do SendCom
+		Do ReadCom
+		If nComResult = 999
+			Loop				&&结束循环，重新返回到while中检查条件是否满足
+		EndIf
+		If nComResult = 930
+			Return
+		EndIf
+		If nComResult = 0
+			&&读取成功，写数据
+			nData = BcdToNum(cData{1, 6},33h)
+			i= Messagebox("地址:"+ STR(nData, 12, 0),0,"结  果")
+			if i=1
+				Return
+			endif
+		EndIf
+	Enddo
+Return
+Endpro
+
+Start
+	cAdv_Addr = "AAAAAAAAAAAA"
+	Adv_Addr = "\xAA\xAA\xAA\xAA\xAA\xAA"&&设置一个广播地址
+	RecvWait = 10 
+	nCom = 2
+	Waken = "\xFE\xFE\xFE"
+	Do While .T.
+		Clear
+		Set Mode To 1
+		@0,4 Say " 485掌机程序 "
+		@1,1 Say "=================="
+		@2,5 Prompt " 电压设置 "
+		@3,5 Prompt " 电流设置 "
+		@4,5 Prompt " 电量设置 "
+		@5,5 Prompt " 设    置 "
+		@6,5 Prompt " 关    于 "
+		&&@7,5 Prompt " 读取地址 "
+		@8,1 Say "=================="
+		MenuChoice = 1
+		Menu To MenuChoice
+
+		Do Case
+		Case MenuChoice = 1
+			Do Voltage_Set
+		Case MenuChoice = 2
+			Do Current_Set
+		Case MenuChoice = 3
+			Do Energy_Set
+		Case MenuChoice = 4
+			Do Options
+		Case MenuChoice = 5
+			i = MessageBox("    485掌机程序         VERSION 1.0    ",0,"关  于")
+		Case MenuChoice = 6
+			Do ReadAddress
+		OtherWise
+			Exit
+		EndCase
+	Enddo
+EndStart
